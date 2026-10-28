@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>작은 섬 마을</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#eaf6f4;--fg:#1f3a3d;--card:#fff;--mut:#5b7b7e;--water:#a9dce6;--land:#c4e6a4;--land2:#b3da92;--acc:#2a9d8f;--bad:#d1495b}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1f26;--fg:#e3f1f0;--card:#183039;--mut:#8fb0b3;--water:#1c4553;--land:#4f7d56;--land2:#467049;--acc:#4fc3b3;--bad:#ff7b8a}}
+:root[data-theme="dark"]{--bg:#0f1f26;--fg:#e3f1f0;--card:#183039;--mut:#8fb0b3;--water:#1c4553;--land:#4f7d56;--land2:#467049;--acc:#4fc3b3;--bad:#ff7b8a}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px;overflow-x:hidden}
+.w{width:100%;max-width:520px}
+.top{display:flex;justify-content:space-between;align-items:baseline}
+.top b{font-size:28px}
+.mut{color:var(--mut);font-size:13px}
+.bar{height:8px;background:var(--card);border-radius:8px;overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;background:var(--acc);width:0;transition:width .3s}
+#box{position:relative;width:100%;aspect-ratio:1;border-radius:20px;overflow:hidden;background:var(--water);touch-action:manipulation}
+canvas{width:100%;height:100%;display:block}
+.pop{position:absolute;font-weight:800;font-size:22px;pointer-events:none;animation:up .9s forwards;transform:translate(-50%,-50%)}
+@keyframes up{to{transform:translate(-50%,-190%);opacity:0}}
+.card{background:var(--card);border-radius:16px;padding:12px;display:flex;gap:12px;align-items:center}
+.big{font-size:44px;line-height:1}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.chips span{background:var(--bg);border-radius:10px;padding:2px 8px;font-size:13px}
+.q{margin-left:auto;font-size:20px;text-align:right;max-width:40%;word-break:break-all;opacity:.85}
+button{font:inherit;border:0;border-radius:12px;padding:10px 16px;background:var(--acc);color:#fff;font-weight:700}
+button.g{background:var(--card);color:var(--fg)}
+#ov{position:absolute;inset:0;background:rgba(10,25,30,.7);color:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center}
+</style></head><body>
+<div class="w top"><div><div class="mut">점수</div><b id="sc">0</b></div><div class="mut" style="text-align:right">최고 <span id="best">0</span><br><span id="nx"></span></div></div>
+<div class="w" style="margin-top:-6px"><div class="bar"><i id="pg"></i></div></div>
+<div class="w" id="box"><canvas id="cv"></canvas><div id="ov"><div style="font-size:40px">🏝️</div><b id="ot" style="font-size:22px"></b><div id="os"></div><button id="re">새 섬에서 다시</button></div></div>
+<div class="w card"><div class="big" id="ce"></div><div><b id="cn"></b><div class="chips" id="cr"></div></div><div class="q" id="qu"></div></div>
+<div class="w mut" style="text-align:center">칸을 탭하면 예상 점수 확인 · 같은 칸을 한 번 더 탭하면 건설<br>건물을 놓은 칸 주변 2칸 안의 건물·나무가 점수를 바꿔요</div>
+<div class="w" style="display:flex;gap:8px"><button class="g" id="nw" style="flex:1">🔄 섬 다시 만들기</button></div>
+<script>
+const N=13,R=2,cv=document.getElementById('cv'),ctx=cv.getContext('2d'),$=id=>document.getElementById(id);
+const B={
+house:{e:'🏠',n:'집',b:1,r:{tree:1,well:2,house:1,market:1,factory:-3}},
+farm:{e:'🌾',n:'농장',b:1,r:{house:1,well:3,farm:1,tree:-1,factory:-2}},
+well:{e:'💧',n:'우물',b:0,r:{house:2,farm:2,well:-3}},
+market:{e:'🏪',n:'시장',b:2,r:{house:2,farm:1,market:-4}},
+chapel:{e:'⛪',n:'예배당',b:3,r:{house:1,tree:2,factory:-4,chapel:-5}},
+factory:{e:'🏭',n:'공장',b:6,r:{house:-2,farm:-1,tree:-1,factory:2}}};
+const ALL=Object.keys(B),em=k=>k==='tree'?'🌳':B[k].e,thr=k=>6*k*(k+1);
+let g,score,lvl,queue,sel,over,best=0;
+try{best=+localStorage.getItem('tinyisle-best')||0}catch(e){}
+function gen(){let c=0;do{const p=[0,1,2].map(()=>[Math.random()*6.28,.08+Math.random()*.12,2+Math.floor(Math.random()*3)]);g=[];c=0;
+for(let y=0;y<N;y++){g[y]=[];for(let x=0;x<N;x++){const dx=x-(N-1)/2,dy=y-(N-1)/2,d=Math.hypot(dx,dy)/(N/2),a=Math.atan2(dy,dx);
+let r=.82;p.forEach(q=>r+=q[1]*Math.sin(q[2]*a+q[0]));const land=d<r;if(land)c++;g[y][x]={land,o:land&&Math.random()<.14?'tree':null}}}}while(c<70)}
+function pack(){const pool=ALL.slice(0,Math.min(3+lvl,6)),a=[];if(lvl>0&&lvl<=3)a.push(ALL[2+lvl]);while(a.length<6)a.push(pool[Math.floor(Math.random()*pool.length)]);return a.sort(()=>Math.random()-.5)}
+function start(){gen();score=0;lvl=0;sel=null;over=false;queue=pack();queue.push(...pack().slice(0,1));$('ov').style.display='none';ui();draw()}
+function calc(x,y,t){let s=B[t].b;for(let dy=-R;dy<=R;dy++)for(let dx=-R;dx<=R;dx++){if(!dx&&!dy)continue;const c=g[y+dy]&&g[y+dy][x+dx];if(c&&c.o&&B[t].r[c.o])s+=B[t].r[c.o]}return s}
+function size(){const w=$('box').clientWidth,d=devicePixelRatio||1;cv.width=cv.height=w*d;ctx.setTransform(d,0,0,d,0,0);return w/N}
+function draw(){const cs=size(),w=cs*N;ctx.clearRect(0,0,w,w);ctx.textAlign='center';ctx.textBaseline='middle';
+const css=getComputedStyle(document.documentElement);
+for(let y=0;y<N;y++)for(let x=0;x<N;x++){const c=g[y][x];if(!c.land)continue;ctx.fillStyle=css.getPropertyValue((x+y)%2?'--land':'--land2');ctx.beginPath();ctx.roundRect(x*cs+1,y*cs+1,cs-2,cs-2,cs*.22);ctx.fill();
+if(c.o){ctx.font=cs*.68+'px serif';ctx.fillText(em(c.o),x*cs+cs/2,y*cs+cs/2+cs*.04)}}
+if(sel&&!over){const[x,y]=sel,t=queue[0],s=calc(x,y,t);ctx.strokeStyle=css.getPropertyValue('--acc');ctx.lineWidth=2;ctx.setLineDash([6,5]);
+ctx.strokeRect(Math.max(0,x-R)*cs,Math.max(0,y-R)*cs,(Math.min(N-1,x+R)-Math.max(0,x-R)+1)*cs,(Math.min(N-1,y+R)-Math.max(0,y-R)+1)*cs);ctx.setLineDash([]);
+ctx.globalAlpha=.55;ctx.font=cs*.68+'px serif';ctx.fillText(B[t].e,x*cs+cs/2,y*cs+cs/2);ctx.globalAlpha=1;
+ctx.font='800 '+cs*.36+'px sans-serif';const tx=(s>0?'+':'')+s,tw=ctx.measureText(tx).width+10;
+ctx.fillStyle=s<0?css.getPropertyValue('--bad'):css.getPropertyValue('--acc');ctx.beginPath();ctx.roundRect(x*cs+cs/2-tw/2,y*cs-cs*.3,tw,cs*.42,8);ctx.fill();ctx.fillStyle='#fff';ctx.fillText(tx,x*cs+cs/2,y*cs-cs*.09)}}
+function ui(){$('sc').textContent=score;$('best').textContent=best;const n=thr(lvl+1),p=lvl?thr(lvl):0;$('nx').textContent='다음 보급까지 '+Math.max(0,n-score)+'점';$('pg').style.width=Math.max(0,Math.min(100,(score-p)/(n-p)*100))+'%';
+const t=queue[0];if(!t){$('ce').textContent='—';$('cn').textContent='건물 없음';$('cr').innerHTML='';$('qu').textContent='';return}
+$('ce').textContent=B[t].e;$('cn').textContent=B[t].n+' (기본 '+B[t].b+')';$('cr').innerHTML=Object.entries(B[t].r).map(([k,v])=>'<span>'+em(k)+(v>0?' +':' −')+Math.abs(v)+'</span>').join('');
+$('qu').textContent=queue.slice(1,6).map(k=>B[k].e).join('')+(queue.length>6?' +'+(queue.length-6):'')}
+function pop(x,y,s){const cs=$('box').clientWidth/N,d=document.createElement('div');d.className='pop';d.textContent=(s>0?'+':'')+s;d.style.cssText+=`left:${x*cs+cs/2}px;top:${y*cs+cs/2}px;color:${s<0?'#ff7b8a':'#fff'};text-shadow:0 1px 4px rgba(0,0,0,.5)`;$('box').appendChild(d);setTimeout(()=>d.remove(),900)}
+function place(x,y){const t=queue.shift(),s=calc(x,y,t);g[y][x].o=t;score+=s;pop(x,y,s);sel=null;
+while(score>=thr(lvl+1)){lvl++;queue.push(...pack())}
+const free=g.some(r=>r.some(c=>c.land&&!c.o));
+if(!queue.length||!free){over=true;if(score>best){best=score;try{localStorage.setItem('tinyisle-best',best)}catch(e){}}
+$('ot').textContent=free?'건물이 모두 소진됐어요':'섬이 가득 찼어요';$('os').textContent='최종 점수 '+score+(score>=best?' · 최고 기록! 🎉':'');$('ov').style.display='flex'}
+ui();draw()}
+cv.addEventListener('click',e=>{if(over)return;const r=cv.getBoundingClientRect(),cs=r.width/N,x=Math.floor((e.clientX-r.left)/cs),y=Math.floor((e.clientY-r.top)/cs),c=g[y]&&g[y][x];
+if(!c||!c.land||c.o)return;if(sel&&sel[0]===x&&sel[1]===y)place(x,y);else{sel=[x,y];draw()}});
+$('re').onclick=start;$('nw').onclick=start;addEventListener('resize',draw);start();
+</script></body></html>
